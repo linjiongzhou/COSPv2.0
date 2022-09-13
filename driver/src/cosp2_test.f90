@@ -53,7 +53,7 @@ module cosp2_test
                                  grLidar532_histBsct,atlid_histBsct,vgrid_zu,vgrid_zl,    & 
                                  Nlvgrid_local  => Nlvgrid,                               &
                                  vgrid_z,cloudsat_preclvl
-  use cosp_phys_constants, only: amw,amd,amO3,amCO2,amCH4,amN2O,amCO
+  use cosp_phys_constants, only: amw,amd,amO3,amCO2,amCH4,amN2O,amCO,grav
   use mod_cosp_io,         only: nc_read_input_file,write_cosp2_output
   USE mod_quickbeam_optics,only: size_distribution,hydro_class_init,quickbeam_optics,     &
                                  quickbeam_optics_init,gases
@@ -358,8 +358,8 @@ contains
            fl_ccsnow(Npoints,Nlevels),Reff(Npoints,Nlevels,N_HYDRO),                     &
            dtau_s(Npoints,Nlevels),dtau_c(Npoints,Nlevels),dem_s(Npoints,Nlevels),       &
            dem_c(Npoints,Nlevels),skt(Npoints),landmask(Npoints),                        &
-           mr_ozone(Npoints,Nlevels),u_wind(Npoints),v_wind(Npoints),sunlit(Npoints),    &
-           frac_out(Npoints,Ncolumns,Nlevels),surfelev(Npoints))
+           mr_ozone(Npoints,Nlevels),u_wind(Npoints,Nlevels),v_wind(Npoints,Nlevels),    &
+           sunlit(Npoints),frac_out(Npoints,Ncolumns,Nlevels),surfelev(Npoints))
 
   !fileIN = trim(dinput)//trim(finput)
   !call nc_read_input_file(fileIN,Npoints,Nlevels,N_HYDRO,lon,lat,p,ph,zlev,zlev_half,    &
