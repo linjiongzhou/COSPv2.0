@@ -68,7 +68,9 @@ module cosp2_test
                                  modis_optics_partition
   use mod_cosp_stats,      ONLY: COSP_CHANGE_VERTICAL_GRID
   use machine,             ONLY: kind_phys
-  use GFS_typedefs,        ONLY: cosp_type
+  use GFS_typedefs,        ONLY: GFS_grid_type, GFS_control_type, GFS_diag_type,          &
+                                 GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type,   &
+                                 GFS_radtend_type, GFS_init_type
   
   implicit none
 
@@ -477,169 +479,173 @@ contains
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
   ! SUBROUTINE cosp2_driver
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
-  subroutine cosp2_driver (Npoints, Nlevels, tgrs, sphum, ugrs, vgrs, prsl, prsi, &
-                 phil, phii, tsfc, o3mr, slmsk, oro, cld_amt, liq_wat, ice_wat, &
-                 pfr, pfs, pfg, ncld, r_eff, coszen, ctau, cosp)
+  subroutine cosp2_driver (Model, Grid, Statein, Stateout, Sfcprop, Radtend, Diag, Init_parm)
 
   implicit none
 
-  integer, intent (in) :: Npoints, Nlevels, ncld
+  type(GFS_init_type), intent(in) :: Init_parm
+  type (GFS_control_type), intent (in) :: Model
+  type (GFS_grid_type), intent (in) :: Grid(:)
+  type (GFS_statein_type), intent (in) :: Statein(:)
+  type (GFS_stateout_type), intent (in) :: Stateout(:)
+  type (GFS_sfcprop_type), intent (in) :: Sfcprop(:)
+  type (GFS_radtend_type), intent (in) :: Radtend(:)
 
-  real (kind = kind_phys), dimension (Npoints), intent (in) :: tsfc, slmsk, oro, coszen
-  real (kind = kind_phys), dimension (Npoints, Nlevels), intent (in) :: tgrs, sphum, prsl
-  real (kind = kind_phys), dimension (Npoints, Nlevels), intent (in) :: phil, ugrs, vgrs, o3mr
-  real (kind = kind_phys), dimension (Npoints, Nlevels), intent (in) :: cld_amt, liq_wat, ice_wat
-  real (kind = kind_phys), dimension (Npoints, Nlevels), intent (in) :: pfr, pfs, pfg
-  real (kind = kind_phys), dimension (Npoints, Nlevels + 1), intent (in) :: prsi, phii
-  real (kind = kind_phys), dimension (Npoints, Nlevels, ncld), intent (in) :: r_eff
-  real (kind = kind_phys), dimension (Npoints, Nlevels, 2), intent (in) :: ctau
+  type (GFS_diag_type), intent (inout) :: Diag(:)
 
-  type (cosp_type), intent (out) :: cosp
-      !longitude                          (Npoints), &
-      !latitude                           (Npoints), &
-      !tau7                               (ntau), &
-      !tau7_bnds                          (2,ntau), &
-      !pres7                              (npres), &
-      !pres7_bnds                         (2,npres), &
-      !hgt16                              (nhgt), &
-      !hgt16_bnds                         (2,nhgt), &
-      !atb532_perp                        (Npoints,Ncolumns,Nlevels), &
-      !atb532                             (Npoints,Ncolumns,Nlevels), &
-      !calipso_tau                        (Npoints,Ncolumns,Nlevels), &
-      !cfadLidarsr532                     (Npoints,SR_BINS,Nlvgrid), &
-      !clcalipso                          (Npoints,Nlvgrid), &
-      !lidarBetaMol532                    (Npoints,Nlevels), &
-      !SR_EDGES                           (2,SR_BINS), &
-      !parasolPix_refl                    (Npoints,Ncolumns,PARASOL_NREFL), &
-      !parasolGrid_refl                   (Npoints,PARASOL_NREFL), &
-      !dbze94                             (Npoints,Ncolumns,Nlevels), &
-      !cfadDbze94                         (Npoints,cloudsat_DBZE_BINS,Nlvgrid), &
-      !cltisccp                           (Npoints), &
-      !meantbisccp                        (Npoints), &
-      !meantbclrisccp                     (Npoints), &
-      !pctisccp                           (Npoints), &
-      !tauisccp                           (Npoints), &
-      !albisccp                           (Npoints), &
-      !boxtauisccp                        (Npoints,Ncolumns), &
-      !boxptopisccp                       (Npoints,Ncolumns), &
-      !clisccp                            (Npoints,ntau,npres), &
-      !clMISR                             (Npoints,ntau,nhgt), &
-      !misr_meanztop                      (Npoints), &
-      !misr_cldarea                       (Npoints), &
-      !cltmodis                           (Npoints), &
-      !clwmodis                           (Npoints), &
-      !climodis                           (Npoints), &
-      !clhmodis                           (Npoints), &
-      !clmmodis                           (Npoints), &
-      !cllmodis                           (Npoints), &
-      !tautmodis                          (Npoints), &
-      !tauwmodis                          (Npoints), &
-      !tauimodis                          (Npoints), &
-      !tautlogmodis                       (Npoints), &
-      !tauwlogmodis                       (Npoints), &
-      !tauilogmodis                       (Npoints), &
-      !reffclwmodis                       (Npoints), &
-      !reffclimodis                       (Npoints), &
-      !pctmodis                           (Npoints), &
-      !lwpmodis                           (Npoints), &
-      !iwpmodis                           (Npoints), &
-      !clmodis                            (Npoints,ntau,npres), &
-      !modis_Optical_Thickness_vs_ReffICE (Npoints,ntau,numMODISReffIceBins), &
-      !modis_Optical_Thickness_vs_ReffLIQ (Npoints,ntau,numMODISReffLiqBins), &
-      !clcalipso2                         (Npoints,Nlvgrid), &
-      !cltlidarradar                      (Npoints), &
-      !clcalipsoice                       (Npoints,Nlvgrid), &
-      !clcalipsoliq                       (Npoints,Nlvgrid), &
-      !clcalipsoun                        (Npoints,Nlvgrid), &
-      !cllcalipsoice                      (Npoints), &
-      !clmcalipsoice                      (Npoints), &
-      !clhcalipsoice                      (Npoints), &
-      !cltcalipsoice                      (Npoints), &
-      !cllcalipsoliq                      (Npoints), &
-      !clmcalipsoliq                      (Npoints), &
-      !clhcalipsoliq                      (Npoints), &
-      !cltcalipsoliq                      (Npoints), &
-      !cllcalipsoun                       (Npoints), &
-      !clmcalipsoun                       (Npoints), &
-      !clhcalipsoun                       (Npoints), &
-      !cltcalipsoun                       (Npoints), &
-      !cllcalipso                         (Npoints), &
-      !clmcalipso                         (Npoints), &
-      !clhcalipso                         (Npoints), &
-      !cltcalipso                         (Npoints), &
-      !clcalipsotmp                       (Npoints,Nlvgrid), &
-      !clcalipsotmpice                    (Npoints,Nlvgrid), &
-      !clcalipsotmpliq                    (Npoints,Nlvgrid), &
-      !clcalipsotmpun                     (Npoints,Nlvgrid), &
-      !SR_BINS_list                       (SR_BINS), &
-      !bnds                               (2), &
-      !loc                                (Npoints), &
-      !lev                                (Nlevels), &
-      !levStat                            (Nlvgrid), &
-      !cosp_scol                          (Ncolumns), &
-      !PARASOL_NREFL_list                 (PARASOL_NREFL), &
-      !cloudsat_DBZE_BINS_list            (cloudsat_DBZE_BINS), &
-      !REICE_MODIS                        (numMODISReffIceBins), &
-      !RELIQ_MODIS                        (numMODISReffLiqBins), &
-      !clopaquecalipso                    (Npoints), &
-      !clthincalipso                      (Npoints), &
-      !clzopaquecalipso                   (Npoints), &
-      !clcalipsoopaque                    (Npoints,Nlvgrid), &
-      !clcalipsothin                      (Npoints,Nlvgrid), &
-      !clcalipsozopaque                   (Npoints,Nlvgrid), &
-      !clcalipsoopacity                   (Npoints,Nlvgrid), &
-      !clopaquetemp                       (Npoints), &
-      !clthintemp                         (Npoints), &
-      !clzopaquetemp                      (Npoints), &
-      !clopaquemeanz                      (Npoints), &
-      !clthinmeanz                        (Npoints), &
-      !clthinemis                         (Npoints), &
-      !clopaquemeanzse                    (Npoints), &
-      !clthinmeanzse                      (Npoints), &
-      !clzopaquecalipsose                 (Npoints), &
-      !cllgrLidar532                      (Npoints), &
-      !clmgrLidar532                      (Npoints), &
-      !clhgrLidar532                      (Npoints), &
-      !cltgrLidar532                      (Npoints), &
-      !clgrLidar532                       (Npoints,Nlvgrid), &
-      !lidarBetaMol532gr                  (Npoints,Nlevels), &
-      !cfadLidarsr532gr                   (Npoints,SR_BINS,Nlvgrid), &
-      !atb532gr                           (Npoints,Ncolumns,Nlevels), &
-      !SR_BINS_GR                         (SR_BINS), &
-      !SR_EDGES_GR                        (2,SR_BINS), &
-      !cllatlid                           (Npoints), &
-      !clmatlid                           (Npoints), &
-      !clhatlid                           (Npoints), &
-      !cltatlid                           (Npoints), &
-      !clatlid                            (Npoints,Nlvgrid), &
-      !lidarBetaMol355                    (Npoints,Nlevels), &
-      !cfadLidarsr355                     (Npoints,SR_BINS,Nlvgrid), &
-      !atb355                             (Npoints,Ncolumns,Nlevels), &
-      !SR_BINS_ATLID                      (SR_BINS), &
-      !SR_EDGES_ATLID                     (2,SR_BINS), &
-      !ptcloudsatflag0                    (Npoints), &
-      !ptcloudsatflag1                    (Npoints), &
-      !ptcloudsatflag2                    (Npoints), &
-      !ptcloudsatflag3                    (Npoints), &
-      !ptcloudsatflag4                    (Npoints), &
-      !ptcloudsatflag5                    (Npoints), &
-      !ptcloudsatflag6                    (Npoints), &
-      !ptcloudsatflag7                    (Npoints), &
-      !ptcloudsatflag8                    (Npoints), &
-      !ptcloudsatflag9                    (Npoints), &
-      !cloudsatpia                        (Npoints), &
-      !cloudsat_tcc                       (Npoints), &
-      !cloudsat_tcc2                      (Npoints), &
-      !npdfcld                            (Npoints), &
-      !npdfdrz                            (Npoints), &
-      !npdfrain                           (Npoints)
-      !ncfodd1                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
-      !ncfodd2                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
-      !ncfodd3                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
-      !CFODD_NDBZE_list                   (CFODD_NDBZE), &
-      !CFODD_NICOD_list                   (CFODD_NICOD)
+  !longitude                          (Npoints), &
+  !latitude                           (Npoints), &
+  !tau7                               (ntau), &
+  !tau7_bnds                          (2,ntau), &
+  !pres7                              (npres), &
+  !pres7_bnds                         (2,npres), &
+  !hgt16                              (nhgt), &
+  !hgt16_bnds                         (2,nhgt), &
+  !atb532_perp                        (Npoints,Ncolumns,Nlevels), &
+  !atb532                             (Npoints,Ncolumns,Nlevels), &
+  !calipso_tau                        (Npoints,Ncolumns,Nlevels), &
+  !cfadLidarsr532                     (Npoints,SR_BINS,Nlvgrid), &
+  !clcalipso                          (Npoints,Nlvgrid), &
+  !lidarBetaMol532                    (Npoints,Nlevels), &
+  !SR_EDGES                           (2,SR_BINS), &
+  !parasolPix_refl                    (Npoints,Ncolumns,PARASOL_NREFL), &
+  !parasolGrid_refl                   (Npoints,PARASOL_NREFL), &
+  !dbze94                             (Npoints,Ncolumns,Nlevels), &
+  !cfadDbze94                         (Npoints,cloudsat_DBZE_BINS,Nlvgrid), &
+  !cltisccp                           (Npoints), &
+  !meantbisccp                        (Npoints), &
+  !meantbclrisccp                     (Npoints), &
+  !pctisccp                           (Npoints), &
+  !tauisccp                           (Npoints), &
+  !albisccp                           (Npoints), &
+  !boxtauisccp                        (Npoints,Ncolumns), &
+  !boxptopisccp                       (Npoints,Ncolumns), &
+  !clisccp                            (Npoints,ntau,npres), &
+  !clMISR                             (Npoints,ntau,nhgt), &
+  !misr_meanztop                      (Npoints), &
+  !misr_cldarea                       (Npoints), &
+  !cltmodis                           (Npoints), &
+  !clwmodis                           (Npoints), &
+  !climodis                           (Npoints), &
+  !clhmodis                           (Npoints), &
+  !clmmodis                           (Npoints), &
+  !cllmodis                           (Npoints), &
+  !tautmodis                          (Npoints), &
+  !tauwmodis                          (Npoints), &
+  !tauimodis                          (Npoints), &
+  !tautlogmodis                       (Npoints), &
+  !tauwlogmodis                       (Npoints), &
+  !tauilogmodis                       (Npoints), &
+  !reffclwmodis                       (Npoints), &
+  !reffclimodis                       (Npoints), &
+  !pctmodis                           (Npoints), &
+  !lwpmodis                           (Npoints), &
+  !iwpmodis                           (Npoints), &
+  !clmodis                            (Npoints,ntau,npres), &
+  !modis_Optical_Thickness_vs_ReffICE (Npoints,ntau,numMODISReffIceBins), &
+  !modis_Optical_Thickness_vs_ReffLIQ (Npoints,ntau,numMODISReffLiqBins), &
+  !clcalipso2                         (Npoints,Nlvgrid), &
+  !cltlidarradar                      (Npoints), &
+  !clcalipsoice                       (Npoints,Nlvgrid), &
+  !clcalipsoliq                       (Npoints,Nlvgrid), &
+  !clcalipsoun                        (Npoints,Nlvgrid), &
+  !cllcalipsoice                      (Npoints), &
+  !clmcalipsoice                      (Npoints), &
+  !clhcalipsoice                      (Npoints), &
+  !cltcalipsoice                      (Npoints), &
+  !cllcalipsoliq                      (Npoints), &
+  !clmcalipsoliq                      (Npoints), &
+  !clhcalipsoliq                      (Npoints), &
+  !cltcalipsoliq                      (Npoints), &
+  !cllcalipsoun                       (Npoints), &
+  !clmcalipsoun                       (Npoints), &
+  !clhcalipsoun                       (Npoints), &
+  !cltcalipsoun                       (Npoints), &
+  !cllcalipso                         (Npoints), &
+  !clmcalipso                         (Npoints), &
+  !clhcalipso                         (Npoints), &
+  !cltcalipso                         (Npoints), &
+  !clcalipsotmp                       (Npoints,Nlvgrid), &
+  !clcalipsotmpice                    (Npoints,Nlvgrid), &
+  !clcalipsotmpliq                    (Npoints,Nlvgrid), &
+  !clcalipsotmpun                     (Npoints,Nlvgrid), &
+  !SR_BINS_list                       (SR_BINS), &
+  !bnds                               (2), &
+  !loc                                (Npoints), &
+  !lev                                (Nlevels), &
+  !levStat                            (Nlvgrid), &
+  !cosp_scol                          (Ncolumns), &
+  !PARASOL_NREFL_list                 (PARASOL_NREFL), &
+  !cloudsat_DBZE_BINS_list            (cloudsat_DBZE_BINS), &
+  !REICE_MODIS                        (numMODISReffIceBins), &
+  !RELIQ_MODIS                        (numMODISReffLiqBins), &
+  !clopaquecalipso                    (Npoints), &
+  !clthincalipso                      (Npoints), &
+  !clzopaquecalipso                   (Npoints), &
+  !clcalipsoopaque                    (Npoints,Nlvgrid), &
+  !clcalipsothin                      (Npoints,Nlvgrid), &
+  !clcalipsozopaque                   (Npoints,Nlvgrid), &
+  !clcalipsoopacity                   (Npoints,Nlvgrid), &
+  !clopaquetemp                       (Npoints), &
+  !clthintemp                         (Npoints), &
+  !clzopaquetemp                      (Npoints), &
+  !clopaquemeanz                      (Npoints), &
+  !clthinmeanz                        (Npoints), &
+  !clthinemis                         (Npoints), &
+  !clopaquemeanzse                    (Npoints), &
+  !clthinmeanzse                      (Npoints), &
+  !clzopaquecalipsose                 (Npoints), &
+  !cllgrLidar532                      (Npoints), &
+  !clmgrLidar532                      (Npoints), &
+  !clhgrLidar532                      (Npoints), &
+  !cltgrLidar532                      (Npoints), &
+  !clgrLidar532                       (Npoints,Nlvgrid), &
+  !lidarBetaMol532gr                  (Npoints,Nlevels), &
+  !cfadLidarsr532gr                   (Npoints,SR_BINS,Nlvgrid), &
+  !atb532gr                           (Npoints,Ncolumns,Nlevels), &
+  !SR_BINS_GR                         (SR_BINS), &
+  !SR_EDGES_GR                        (2,SR_BINS), &
+  !cllatlid                           (Npoints), &
+  !clmatlid                           (Npoints), &
+  !clhatlid                           (Npoints), &
+  !cltatlid                           (Npoints), &
+  !clatlid                            (Npoints,Nlvgrid), &
+  !lidarBetaMol355                    (Npoints,Nlevels), &
+  !cfadLidarsr355                     (Npoints,SR_BINS,Nlvgrid), &
+  !atb355                             (Npoints,Ncolumns,Nlevels), &
+  !SR_BINS_ATLID                      (SR_BINS), &
+  !SR_EDGES_ATLID                     (2,SR_BINS), &
+  !ptcloudsatflag0                    (Npoints), &
+  !ptcloudsatflag1                    (Npoints), &
+  !ptcloudsatflag2                    (Npoints), &
+  !ptcloudsatflag3                    (Npoints), &
+  !ptcloudsatflag4                    (Npoints), &
+  !ptcloudsatflag5                    (Npoints), &
+  !ptcloudsatflag6                    (Npoints), &
+  !ptcloudsatflag7                    (Npoints), &
+  !ptcloudsatflag8                    (Npoints), &
+  !ptcloudsatflag9                    (Npoints), &
+  !cloudsatpia                        (Npoints), &
+  !cloudsat_tcc                       (Npoints), &
+  !cloudsat_tcc2                      (Npoints), &
+  !npdfcld                            (Npoints), &
+  !npdfdrz                            (Npoints), &
+  !npdfrain                           (Npoints)
+  !ncfodd1                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
+  !ncfodd2                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
+  !ncfodd3                            (Npoints,CFODD_NDBZE,CFODD_NICOD), &
+  !CFODD_NDBZE_list                   (CFODD_NDBZE), &
+  !CFODD_NICOD_list                   (CFODD_NICOD)
 
-  integer :: ij
+  integer :: ij, nb, Npoints, Nlevels, ncld, nblks
+
+  nblks = size(Init_parm%blksz)
+
+  do nb = 1, nblks
+
+  Npoints = size(Grid(nb)%xlon,1)
+  Nlevels = Model%levs
+  ncld = Model%ncld
 
   !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   ! Input
@@ -648,41 +654,41 @@ contains
   !-----------------------------------------------------------------------
   ! input variables from physics
   !-----------------------------------------------------------------------
-  p                  = prsl
-  ph                 = prsi(:,1:Nlevels)
-  zlev               = phil / grav
-  zlev_half          = phii(:,1:Nlevels) / grav
-  T                  = tgrs
-  sh                 = sphum
-  tca                = cld_amt
+  p                  = Statein(nb)%prsl
+  ph                 = Statein(nb)%prsi(:,1:Nlevels)
+  zlev               = Statein(nb)%phil / grav
+  zlev_half          = Statein(nb)%phii(:,1:Nlevels) / grav
+  T                  = Stateout(nb)%gt0
+  sh                 = Stateout(nb)%gq0(:,:,1)
+  tca                = Stateout(nb)%gq0(:,:,Model%ntclamt)
   cca                = 0
-  mr_lsliq           = liq_wat
-  mr_lsice           = ice_wat
+  mr_lsliq           = Stateout(nb)%gq0(:,:,Model%ntcw)
+  mr_lsice           = Stateout(nb)%gq0(:,:,Model%ntiw)
   mr_ccliq           = 0.0
   mr_ccice           = 0.0
-  fl_lsrain          = pfr / 86400.
-  fl_lssnow          = pfs / 86400.
-  fl_lsgrpl          = pfg / 86400.
+  fl_lsrain          = Diag(nb)%pfr / 86400.
+  fl_lssnow          = Diag(nb)%pfs / 86400.
+  fl_lsgrpl          = Diag(nb)%pfg / 86400.
   fl_ccrain          = 0.0
   fl_ccsnow          = 0.0
   Reff               = 0.0
-  Reff(:,:,I_LSCLIQ) = r_eff(:,:,1) * 1.e-6
-  Reff(:,:,I_LSCICE) = r_eff(:,:,2) * 1.e-6
-  Reff(:,:,I_LSRAIN) = r_eff(:,:,3) * 1.e-6
-  Reff(:,:,I_LSSNOW) = r_eff(:,:,4) * 1.e-6
-  Reff(:,:,I_LSGRPL) = r_eff(:,:,5) * 1.e-6
-  dtau_s             = ctau(:,:,1)
+  Reff(:,:,I_LSCLIQ) = Diag(nb)%reff(:,:,1) * 1.e-6
+  Reff(:,:,I_LSCICE) = Diag(nb)%reff(:,:,2) * 1.e-6
+  Reff(:,:,I_LSRAIN) = Diag(nb)%reff(:,:,3) * 1.e-6
+  Reff(:,:,I_LSSNOW) = Diag(nb)%reff(:,:,4) * 1.e-6
+  Reff(:,:,I_LSGRPL) = Diag(nb)%reff(:,:,5) * 1.e-6
+  dtau_s             = Diag(nb)%ctau(:,:,1)
   dtau_c             = 0.0
-  dem_s              = ctau(:,:,2)
+  dem_s              = Diag(nb)%ctau(:,:,2)
   dem_c              = 0.0
-  skt                = tsfc
-  landmask           = slmsk
-  mr_ozone           = o3mr
-  u_wind             = ugrs
-  v_wind             = vgrs
-  sunlit             = ceiling(coszen)
+  skt                = Sfcprop(nb)%tsfc
+  landmask           = 1-abs(Sfcprop(nb)%slmsk-1)
+  mr_ozone           = Stateout(nb)%gq0(:,:,Model%ntoz)
+  u_wind             = Stateout(nb)%gu0
+  v_wind             = Stateout(nb)%gv0
+  sunlit             = ceiling(Radtend(nb)%coszen)
   emsfc_lw           = 1.0
-  surfelev           = oro
+  surfelev           = Sfcprop(nb)%oro
 
   !-----------------------------------------------------------------------
   ! remove bad values
@@ -840,149 +846,151 @@ contains
   !-----------------------------------------------------------------------
   ! output variables to physics
   !-----------------------------------------------------------------------
-  !cosp%longitude                          = lon
-  !cosp%latitude                           = lat
-  !cosp%tau7                               = tau_binCenters
-  !cosp%tau7_bnds                          = tau_binEdges
-  !cosp%pres7                              = pres_binCenters
-  !cosp%pres7_bnds                         = pres_binEdges
-  !cosp%hgt16                              = hgt_binCenters
-  !cosp%hgt16_bnds                         = hgt_binEdges
-  !cosp%atb532_perp                        = cospOUT%calipso_betaperp_tot
-  !cosp%atb532                             = cospOUT%calipso_beta_tot
-  !cosp%calipso_tau                        = cospOUT%calipso_tau_tot
-  !cosp%cfadLidarsr532                     = cospOUT%calipso_cfad_sr
-  !cosp%clcalipso                          = cospOUT%calipso_lidarcld
-  !cosp%lidarBetaMol532                    = cospOUT%calipso_beta_mol
-  !cosp%SR_EDGES                           = reshape([cospOUT%calipso_srbval(1:SR_BINS),cospOUT%calipso_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
-  !cosp%parasolPix_refl                    = cospOUT%parasolPix_refl
-  !cosp%parasolGrid_refl                   = cospOUT%parasolGrid_refl
-  !cosp%dbze94                             = cospOUT%cloudsat_Ze_tot
-  !cosp%cfadDbze94                         = cospOUT%cloudsat_cfad_ze
-  !!!cosp%cltisccp                           = cospOUT%isccp_totalcldarea
-  !!!cosp%meantbisccp                        = cospOUT%isccp_meantb
-  !!!cosp%meantbclrisccp                     = cospOUT%isccp_meantbclr
-  !!!cosp%pctisccp                           = cospOUT%isccp_meanptop
-  !!!cosp%tauisccp                           = cospOUT%isccp_meantaucld
-  !!!cosp%albisccp                           = cospOUT%isccp_meanalbedocld
-  !cosp%boxtauisccp                        = cospOUT%isccp_boxtau
-  !cosp%boxptopisccp                       = cospOUT%isccp_boxptop
-  !cosp%clisccp                            = cospOUT%isccp_fq
-  !cosp%clMISR                             = cospOUT%misr_fq
-  !!!cosp%misr_meanztop                      = cospOUT%misr_meanztop
-  !!!cosp%misr_cldarea                       = cospOUT%misr_cldarea
-  cosp%cltmodis                           = cospOUT%modis_Cloud_Fraction_Total_Mean
-  cosp%clwmodis                           = cospOUT%modis_Cloud_Fraction_Water_Mean
-  cosp%climodis                           = cospOUT%modis_Cloud_Fraction_Ice_Mean
-  cosp%clhmodis                           = cospOUT%modis_Cloud_Fraction_High_Mean
-  cosp%clmmodis                           = cospOUT%modis_Cloud_Fraction_Mid_Mean
-  cosp%cllmodis                           = cospOUT%modis_Cloud_Fraction_Low_Mean
-  cosp%tautmodis                          = cospOUT%modis_Optical_Thickness_Total_Mean
-  cosp%tauwmodis                          = cospOUT%modis_Optical_Thickness_Water_Mean
-  cosp%tauimodis                          = cospOUT%modis_Optical_Thickness_Ice_Mean
-  cosp%tautlogmodis                       = cospOUT%modis_Optical_Thickness_Total_LogMean
-  cosp%tauwlogmodis                       = cospOUT%modis_Optical_Thickness_Water_LogMean
-  cosp%tauilogmodis                       = cospOUT%modis_Optical_Thickness_Ice_LogMean
-  cosp%reffclwmodis                       = cospOUT%modis_Cloud_Particle_Size_Water_Mean
-  cosp%reffclimodis                       = cospOUT%modis_Cloud_Particle_Size_Ice_Mean
-  cosp%pctmodis                           = cospOUT%modis_Cloud_Top_Pressure_Total_Mean
-  cosp%lwpmodis                           = cospOUT%modis_Liquid_Water_Path_Mean
-  cosp%iwpmodis                           = cospOUT%modis_Ice_Water_Path_Mean
-  !cosp%clmodis                            = cospOUT%modis_Optical_Thickness_vs_Cloud_Top_Pressure
-  !cosp%modis_Optical_Thickness_vs_ReffICE = cospOUT%modis_Optical_Thickness_vs_ReffICE
-  !cosp%modis_Optical_Thickness_vs_ReffLIQ = cospOUT%modis_Optical_Thickness_vs_ReffLIQ
-  !cosp%clcalipso2                         = cospOUT%lidar_only_freq_cloud
-  !!!cosp%cltlidarradar                      = cospOUT%radar_lidar_tcc
-  !cosp%clcalipsoice                       = cospOUT%calipso_lidarcldphase(:,:,1)
-  !cosp%clcalipsoliq                       = cospOUT%calipso_lidarcldphase(:,:,2)
-  !cosp%clcalipsoun                        = cospOUT%calipso_lidarcldphase(:,:,3)
-  cosp%cllcalipsoice                      = cospOUT%calipso_cldlayerphase(:,1,1)
-  cosp%clmcalipsoice                      = cospOUT%calipso_cldlayerphase(:,2,1)
-  cosp%clhcalipsoice                      = cospOUT%calipso_cldlayerphase(:,3,1)
-  cosp%cltcalipsoice                      = cospOUT%calipso_cldlayerphase(:,4,1)
-  cosp%cllcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,1,2)
-  cosp%clmcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,2,2)
-  cosp%clhcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,3,2)
-  cosp%cltcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,4,2)
-  cosp%cllcalipsoun                       = cospOUT%calipso_cldlayerphase(:,1,3)
-  cosp%clmcalipsoun                       = cospOUT%calipso_cldlayerphase(:,2,3)
-  cosp%clhcalipsoun                       = cospOUT%calipso_cldlayerphase(:,3,3)
-  cosp%cltcalipsoun                       = cospOUT%calipso_cldlayerphase(:,4,3)
-  cosp%cllcalipso                         = cospOUT%calipso_cldlayer(:,1)
-  cosp%clmcalipso                         = cospOUT%calipso_cldlayer(:,2)
-  cosp%clhcalipso                         = cospOUT%calipso_cldlayer(:,3)
-  cosp%cltcalipso                         = cospOUT%calipso_cldlayer(:,4)
-  !cosp%clcalipsotmp                       = cospOUT%calipso_lidarcldtmp(:,:,1)
-  !cosp%clcalipsotmpice                    = cospOUT%calipso_lidarcldtmp(:,:,2)
-  !cosp%clcalipsotmpliq                    = cospOUT%calipso_lidarcldtmp(:,:,3)
-  !cosp%clcalipsotmpun                     = cospOUT%calipso_lidarcldtmp(:,:,4)
-  !cosp%SR_BINS_list                       = calipso_binCenters
-  !cosp%bnds                               = (/(ij,ij=1,2)/)
-  !cosp%loc                                = (/(ij,ij=1,Npoints)/)
-  !cosp%lev                                = zlev(1,Nlevels:1:-1)
-  !cosp%levStat                            = vgrid_z_local
-  !cosp%cosp_scol                          = (/(ij,ij=1,Ncolumns)/)
-  !cosp%PARASOL_NREFL_list                 = PARASOL_SZA
-  !cosp%cloudsat_DBZE_BINS_list            = cloudsat_binCenters
-  !cosp%REICE_MODIS                        = reffICE_binCenters
-  !cosp%RELIQ_MODIS                        = reffLIQ_binCenters
-  cosp%clopaquecalipso                    = cospOUT%calipso_cldtype(:,1)
-  cosp%clthincalipso                      = cospOUT%calipso_cldtype(:,2)
-  cosp%clzopaquecalipso                   = cospOUT%calipso_cldtype(:,3)
-  !cosp%clcalipsoopaque                    = cospOUT%calipso_lidarcldtype(:,:,1)
-  !cosp%clcalipsothin                      = cospOUT%calipso_lidarcldtype(:,:,2)
-  !cosp%clcalipsozopaque                   = cospOUT%calipso_lidarcldtype(:,:,3)
-  !cosp%clcalipsoopacity                   = cospOUT%calipso_lidarcldtype(:,:,4)
-  cosp%clopaquetemp                       = cospOUT%calipso_cldtypetemp(:,1)
-  cosp%clthintemp                         = cospOUT%calipso_cldtypetemp(:,2)
-  cosp%clzopaquetemp                      = cospOUT%calipso_cldtypetemp(:,3)
-  cosp%clopaquemeanz                      = cospOUT%calipso_cldtypemeanz(:,1)
-  cosp%clthinmeanz                        = cospOUT%calipso_cldtypemeanz(:,2)
-  cosp%clthinemis                         = cospOUT%calipso_cldthinemis
-  cosp%clopaquemeanzse                    = cospOUT%calipso_cldtypemeanzse(:,1)
-  cosp%clthinmeanzse                      = cospOUT%calipso_cldtypemeanzse(:,2)
-  cosp%clzopaquecalipsose                 = cospOUT%calipso_cldtypemeanzse(:,3)
-  !!!cosp%cllgrLidar532                      = cospOUT%grLidar532_cldlayer(:,1)
-  !!!cosp%clmgrLidar532                      = cospOUT%grLidar532_cldlayer(:,2)
-  !!!cosp%clhgrLidar532                      = cospOUT%grLidar532_cldlayer(:,3)
-  !!!cosp%cltgrLidar532                      = cospOUT%grLidar532_cldlayer(:,4)
-  !cosp%clgrLidar532                       = cospOUT%grLidar532_lidarcld
-  !cosp%lidarBetaMol532gr                  = cospOUT%grLidar532_beta_mol
-  !cosp%cfadLidarsr532gr                   = cospOUT%grLidar532_cfad_sr
-  !cosp%atb532gr                           = cospOUT%grLidar532_beta_tot
-  !cosp%SR_BINS_GR                         = grLidar532_binCenters
-  !cosp%SR_EDGES_GR                        = reshape([cospOUT%grLidar532_srbval(1:SR_BINS),cospOUT%grLidar532_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
-  !!!cosp%cllatlid                           = cospOUT%atlid_cldlayer(:,1)
-  !!!cosp%clmatlid                           = cospOUT%atlid_cldlayer(:,2)
-  !!!cosp%clhatlid                           = cospOUT%atlid_cldlayer(:,3)
-  !!!cosp%cltatlid                           = cospOUT%atlid_cldlayer(:,4)
-  !cosp%clatlid                            = cospOUT%atlid_lidarcld
-  !cosp%lidarBetaMol355                    = cospOUT%atlid_beta_mol
-  !cosp%cfadLidarsr355                     = cospOUT%atlid_cfad_sr
-  !cosp%atb355                             = cospOUT%atlid_beta_tot
-  !cosp%SR_BINS_ATLID                      = atlid_binCenters
-  !cosp%SR_EDGES_ATLID                     = reshape([cospOUT%atlid_srbval(1:SR_BINS),cospOUT%atlid_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
-  !!!cosp%ptcloudsatflag0                    = cospOUT%cloudsat_precip_cover(:,1)
-  !!!cosp%ptcloudsatflag1                    = cospOUT%cloudsat_precip_cover(:,2)
-  !!!cosp%ptcloudsatflag2                    = cospOUT%cloudsat_precip_cover(:,3)
-  !!!cosp%ptcloudsatflag3                    = cospOUT%cloudsat_precip_cover(:,4)
-  !!!cosp%ptcloudsatflag4                    = cospOUT%cloudsat_precip_cover(:,5)
-  !!!cosp%ptcloudsatflag5                    = cospOUT%cloudsat_precip_cover(:,6)
-  !!!cosp%ptcloudsatflag6                    = cospOUT%cloudsat_precip_cover(:,7)
-  !!!cosp%ptcloudsatflag7                    = cospOUT%cloudsat_precip_cover(:,8)
-  !!!cosp%ptcloudsatflag8                    = cospOUT%cloudsat_precip_cover(:,9)
-  !!!cosp%ptcloudsatflag9                    = cospOUT%cloudsat_precip_cover(:,10)
-  !!!cosp%cloudsatpia                        = cospOUT%cloudsat_pia
-  !!!cosp%cloudsat_tcc                       = cospOUT%cloudsat_tcc
-  !!!cosp%cloudsat_tcc2                      = cospOUT%cloudsat_tcc2
-  !!!cosp%npdfcld                            = cospOUT%wr_occfreq_ntotal(:,1)
-  !!!cosp%npdfdrz                            = cospOUT%wr_occfreq_ntotal(:,2)
-  !!!cosp%npdfrain                           = cospOUT%wr_occfreq_ntotal(:,3)
-  !cosp%ncfodd1                            = cospOUT%cfodd_ntotal(:,:,:,1)
-  !cosp%ncfodd2                            = cospOUT%cfodd_ntotal(:,:,:,2)
-  !cosp%ncfodd3                            = cospOUT%cfodd_ntotal(:,:,:,3)
-  !cosp%CFODD_NDBZE_list                   = CFODD_HISTDBZEcenters
-  !cosp%CFODD_NICOD_list                   = CFODD_HISTICODcenters
+  !Diag(nb)%cosp%longitude                          = lon
+  !Diag(nb)%cosp%latitude                           = lat
+  !Diag(nb)%cosp%tau7                               = tau_binCenters
+  !Diag(nb)%cosp%tau7_bnds                          = tau_binEdges
+  !Diag(nb)%cosp%pres7                              = pres_binCenters
+  !Diag(nb)%cosp%pres7_bnds                         = pres_binEdges
+  !Diag(nb)%cosp%hgt16                              = hgt_binCenters
+  !Diag(nb)%cosp%hgt16_bnds                         = hgt_binEdges
+  !Diag(nb)%cosp%atb532_perp                        = cospOUT%calipso_betaperp_tot
+  !Diag(nb)%cosp%atb532                             = cospOUT%calipso_beta_tot
+  !Diag(nb)%cosp%calipso_tau                        = cospOUT%calipso_tau_tot
+  !Diag(nb)%cosp%cfadLidarsr532                     = cospOUT%calipso_cfad_sr
+  !Diag(nb)%cosp%clcalipso                          = cospOUT%calipso_lidarcld
+  !Diag(nb)%cosp%lidarBetaMol532                    = cospOUT%calipso_beta_mol
+  !Diag(nb)%cosp%SR_EDGES                           = reshape([cospOUT%calipso_srbval(1:SR_BINS),cospOUT%calipso_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
+  !Diag(nb)%cosp%parasolPix_refl                    = cospOUT%parasolPix_refl
+  !Diag(nb)%cosp%parasolGrid_refl                   = cospOUT%parasolGrid_refl
+  !Diag(nb)%cosp%dbze94                             = cospOUT%cloudsat_Ze_tot
+  !Diag(nb)%cosp%cfadDbze94                         = cospOUT%cloudsat_cfad_ze
+  !!!Diag(nb)%cosp%cltisccp                           = cospOUT%isccp_totalcldarea
+  !!!Diag(nb)%cosp%meantbisccp                        = cospOUT%isccp_meantb
+  !!!Diag(nb)%cosp%meantbclrisccp                     = cospOUT%isccp_meantbclr
+  !!!Diag(nb)%cosp%pctisccp                           = cospOUT%isccp_meanptop
+  !!!Diag(nb)%cosp%tauisccp                           = cospOUT%isccp_meantaucld
+  !!!Diag(nb)%cosp%albisccp                           = cospOUT%isccp_meanalbedocld
+  !Diag(nb)%cosp%boxtauisccp                        = cospOUT%isccp_boxtau
+  !Diag(nb)%cosp%boxptopisccp                       = cospOUT%isccp_boxptop
+  !Diag(nb)%cosp%clisccp                            = cospOUT%isccp_fq
+  !Diag(nb)%cosp%clMISR                             = cospOUT%misr_fq
+  !!!Diag(nb)%cosp%misr_meanztop                      = cospOUT%misr_meanztop
+  !!!Diag(nb)%cosp%misr_cldarea                       = cospOUT%misr_cldarea
+  Diag(nb)%cosp%cltmodis                           = cospOUT%modis_Cloud_Fraction_Total_Mean
+  Diag(nb)%cosp%clwmodis                           = cospOUT%modis_Cloud_Fraction_Water_Mean
+  Diag(nb)%cosp%climodis                           = cospOUT%modis_Cloud_Fraction_Ice_Mean
+  Diag(nb)%cosp%clhmodis                           = cospOUT%modis_Cloud_Fraction_High_Mean
+  Diag(nb)%cosp%clmmodis                           = cospOUT%modis_Cloud_Fraction_Mid_Mean
+  Diag(nb)%cosp%cllmodis                           = cospOUT%modis_Cloud_Fraction_Low_Mean
+  Diag(nb)%cosp%tautmodis                          = cospOUT%modis_Optical_Thickness_Total_Mean
+  Diag(nb)%cosp%tauwmodis                          = cospOUT%modis_Optical_Thickness_Water_Mean
+  Diag(nb)%cosp%tauimodis                          = cospOUT%modis_Optical_Thickness_Ice_Mean
+  Diag(nb)%cosp%tautlogmodis                       = cospOUT%modis_Optical_Thickness_Total_LogMean
+  Diag(nb)%cosp%tauwlogmodis                       = cospOUT%modis_Optical_Thickness_Water_LogMean
+  Diag(nb)%cosp%tauilogmodis                       = cospOUT%modis_Optical_Thickness_Ice_LogMean
+  Diag(nb)%cosp%reffclwmodis                       = cospOUT%modis_Cloud_Particle_Size_Water_Mean
+  Diag(nb)%cosp%reffclimodis                       = cospOUT%modis_Cloud_Particle_Size_Ice_Mean
+  Diag(nb)%cosp%pctmodis                           = cospOUT%modis_Cloud_Top_Pressure_Total_Mean
+  Diag(nb)%cosp%lwpmodis                           = cospOUT%modis_Liquid_Water_Path_Mean
+  Diag(nb)%cosp%iwpmodis                           = cospOUT%modis_Ice_Water_Path_Mean
+  !Diag(nb)%cosp%clmodis                            = cospOUT%modis_Optical_Thickness_vs_Cloud_Top_Pressure
+  !Diag(nb)%cosp%modis_Optical_Thickness_vs_ReffICE = cospOUT%modis_Optical_Thickness_vs_ReffICE
+  !Diag(nb)%cosp%modis_Optical_Thickness_vs_ReffLIQ = cospOUT%modis_Optical_Thickness_vs_ReffLIQ
+  !Diag(nb)%cosp%clcalipso2                         = cospOUT%lidar_only_freq_cloud
+  !!!Diag(nb)%cosp%cltlidarradar                      = cospOUT%radar_lidar_tcc
+  !Diag(nb)%cosp%clcalipsoice                       = cospOUT%calipso_lidarcldphase(:,:,1)
+  !Diag(nb)%cosp%clcalipsoliq                       = cospOUT%calipso_lidarcldphase(:,:,2)
+  !Diag(nb)%cosp%clcalipsoun                        = cospOUT%calipso_lidarcldphase(:,:,3)
+  Diag(nb)%cosp%cllcalipsoice                      = cospOUT%calipso_cldlayerphase(:,1,1)
+  Diag(nb)%cosp%clmcalipsoice                      = cospOUT%calipso_cldlayerphase(:,2,1)
+  Diag(nb)%cosp%clhcalipsoice                      = cospOUT%calipso_cldlayerphase(:,3,1)
+  Diag(nb)%cosp%cltcalipsoice                      = cospOUT%calipso_cldlayerphase(:,4,1)
+  Diag(nb)%cosp%cllcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,1,2)
+  Diag(nb)%cosp%clmcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,2,2)
+  Diag(nb)%cosp%clhcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,3,2)
+  Diag(nb)%cosp%cltcalipsoliq                      = cospOUT%calipso_cldlayerphase(:,4,2)
+  Diag(nb)%cosp%cllcalipsoun                       = cospOUT%calipso_cldlayerphase(:,1,3)
+  Diag(nb)%cosp%clmcalipsoun                       = cospOUT%calipso_cldlayerphase(:,2,3)
+  Diag(nb)%cosp%clhcalipsoun                       = cospOUT%calipso_cldlayerphase(:,3,3)
+  Diag(nb)%cosp%cltcalipsoun                       = cospOUT%calipso_cldlayerphase(:,4,3)
+  Diag(nb)%cosp%cllcalipso                         = cospOUT%calipso_cldlayer(:,1)
+  Diag(nb)%cosp%clmcalipso                         = cospOUT%calipso_cldlayer(:,2)
+  Diag(nb)%cosp%clhcalipso                         = cospOUT%calipso_cldlayer(:,3)
+  Diag(nb)%cosp%cltcalipso                         = cospOUT%calipso_cldlayer(:,4)
+  !Diag(nb)%cosp%clcalipsotmp                       = cospOUT%calipso_lidarcldtmp(:,:,1)
+  !Diag(nb)%cosp%clcalipsotmpice                    = cospOUT%calipso_lidarcldtmp(:,:,2)
+  !Diag(nb)%cosp%clcalipsotmpliq                    = cospOUT%calipso_lidarcldtmp(:,:,3)
+  !Diag(nb)%cosp%clcalipsotmpun                     = cospOUT%calipso_lidarcldtmp(:,:,4)
+  !Diag(nb)%cosp%SR_BINS_list                       = calipso_binCenters
+  !Diag(nb)%cosp%bnds                               = (/(ij,ij=1,2)/)
+  !Diag(nb)%cosp%loc                                = (/(ij,ij=1,Npoints)/)
+  !Diag(nb)%cosp%lev                                = zlev(1,Nlevels:1:-1)
+  !Diag(nb)%cosp%levStat                            = vgrid_z_local
+  !Diag(nb)%cosp%cosp_scol                          = (/(ij,ij=1,Ncolumns)/)
+  !Diag(nb)%cosp%PARASOL_NREFL_list                 = PARASOL_SZA
+  !Diag(nb)%cosp%cloudsat_DBZE_BINS_list            = cloudsat_binCenters
+  !Diag(nb)%cosp%REICE_MODIS                        = reffICE_binCenters
+  !Diag(nb)%cosp%RELIQ_MODIS                        = reffLIQ_binCenters
+  Diag(nb)%cosp%clopaquecalipso                    = cospOUT%calipso_cldtype(:,1)
+  Diag(nb)%cosp%clthincalipso                      = cospOUT%calipso_cldtype(:,2)
+  Diag(nb)%cosp%clzopaquecalipso                   = cospOUT%calipso_cldtype(:,3)
+  !Diag(nb)%cosp%clcalipsoopaque                    = cospOUT%calipso_lidarcldtype(:,:,1)
+  !Diag(nb)%cosp%clcalipsothin                      = cospOUT%calipso_lidarcldtype(:,:,2)
+  !Diag(nb)%cosp%clcalipsozopaque                   = cospOUT%calipso_lidarcldtype(:,:,3)
+  !Diag(nb)%cosp%clcalipsoopacity                   = cospOUT%calipso_lidarcldtype(:,:,4)
+  Diag(nb)%cosp%clopaquetemp                       = cospOUT%calipso_cldtypetemp(:,1)
+  Diag(nb)%cosp%clthintemp                         = cospOUT%calipso_cldtypetemp(:,2)
+  Diag(nb)%cosp%clzopaquetemp                      = cospOUT%calipso_cldtypetemp(:,3)
+  Diag(nb)%cosp%clopaquemeanz                      = cospOUT%calipso_cldtypemeanz(:,1)
+  Diag(nb)%cosp%clthinmeanz                        = cospOUT%calipso_cldtypemeanz(:,2)
+  Diag(nb)%cosp%clthinemis                         = cospOUT%calipso_cldthinemis
+  Diag(nb)%cosp%clopaquemeanzse                    = cospOUT%calipso_cldtypemeanzse(:,1)
+  Diag(nb)%cosp%clthinmeanzse                      = cospOUT%calipso_cldtypemeanzse(:,2)
+  Diag(nb)%cosp%clzopaquecalipsose                 = cospOUT%calipso_cldtypemeanzse(:,3)
+  !!!Diag(nb)%cosp%cllgrLidar532                      = cospOUT%grLidar532_cldlayer(:,1)
+  !!!Diag(nb)%cosp%clmgrLidar532                      = cospOUT%grLidar532_cldlayer(:,2)
+  !!!Diag(nb)%cosp%clhgrLidar532                      = cospOUT%grLidar532_cldlayer(:,3)
+  !!!Diag(nb)%cosp%cltgrLidar532                      = cospOUT%grLidar532_cldlayer(:,4)
+  !Diag(nb)%cosp%clgrLidar532                       = cospOUT%grLidar532_lidarcld
+  !Diag(nb)%cosp%lidarBetaMol532gr                  = cospOUT%grLidar532_beta_mol
+  !Diag(nb)%cosp%cfadLidarsr532gr                   = cospOUT%grLidar532_cfad_sr
+  !Diag(nb)%cosp%atb532gr                           = cospOUT%grLidar532_beta_tot
+  !Diag(nb)%cosp%SR_BINS_GR                         = grLidar532_binCenters
+  !Diag(nb)%cosp%SR_EDGES_GR                        = reshape([cospOUT%grLidar532_srbval(1:SR_BINS),cospOUT%grLidar532_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
+  !!!Diag(nb)%cosp%cllatlid                           = cospOUT%atlid_cldlayer(:,1)
+  !!!Diag(nb)%cosp%clmatlid                           = cospOUT%atlid_cldlayer(:,2)
+  !!!Diag(nb)%cosp%clhatlid                           = cospOUT%atlid_cldlayer(:,3)
+  !!!Diag(nb)%cosp%cltatlid                           = cospOUT%atlid_cldlayer(:,4)
+  !Diag(nb)%cosp%clatlid                            = cospOUT%atlid_lidarcld
+  !Diag(nb)%cosp%lidarBetaMol355                    = cospOUT%atlid_beta_mol
+  !Diag(nb)%cosp%cfadLidarsr355                     = cospOUT%atlid_cfad_sr
+  !Diag(nb)%cosp%atb355                             = cospOUT%atlid_beta_tot
+  !Diag(nb)%cosp%SR_BINS_ATLID                      = atlid_binCenters
+  !Diag(nb)%cosp%SR_EDGES_ATLID                     = reshape([cospOUT%atlid_srbval(1:SR_BINS),cospOUT%atlid_srbval(2:SR_BINS+1)],(/2,SR_BINS/))
+  !!!Diag(nb)%cosp%ptcloudsatflag0                    = cospOUT%cloudsat_precip_cover(:,1)
+  !!!Diag(nb)%cosp%ptcloudsatflag1                    = cospOUT%cloudsat_precip_cover(:,2)
+  !!!Diag(nb)%cosp%ptcloudsatflag2                    = cospOUT%cloudsat_precip_cover(:,3)
+  !!!Diag(nb)%cosp%ptcloudsatflag3                    = cospOUT%cloudsat_precip_cover(:,4)
+  !!!Diag(nb)%cosp%ptcloudsatflag4                    = cospOUT%cloudsat_precip_cover(:,5)
+  !!!Diag(nb)%cosp%ptcloudsatflag5                    = cospOUT%cloudsat_precip_cover(:,6)
+  !!!Diag(nb)%cosp%ptcloudsatflag6                    = cospOUT%cloudsat_precip_cover(:,7)
+  !!!Diag(nb)%cosp%ptcloudsatflag7                    = cospOUT%cloudsat_precip_cover(:,8)
+  !!!Diag(nb)%cosp%ptcloudsatflag8                    = cospOUT%cloudsat_precip_cover(:,9)
+  !!!Diag(nb)%cosp%ptcloudsatflag9                    = cospOUT%cloudsat_precip_cover(:,10)
+  !!!Diag(nb)%cosp%cloudsatpia                        = cospOUT%cloudsat_pia
+  !!!Diag(nb)%cosp%cloudsat_tcc                       = cospOUT%cloudsat_tcc
+  !!!Diag(nb)%cosp%cloudsat_tcc2                      = cospOUT%cloudsat_tcc2
+  !!!Diag(nb)%cosp%npdfcld                            = cospOUT%wr_occfreq_ntotal(:,1)
+  !!!Diag(nb)%cosp%npdfdrz                            = cospOUT%wr_occfreq_ntotal(:,2)
+  !!!Diag(nb)%cosp%npdfrain                           = cospOUT%wr_occfreq_ntotal(:,3)
+  !Diag(nb)%cosp%ncfodd1                            = cospOUT%cfodd_ntotal(:,:,:,1)
+  !Diag(nb)%cosp%ncfodd2                            = cospOUT%cfodd_ntotal(:,:,:,2)
+  !Diag(nb)%cosp%ncfodd3                            = cospOUT%cfodd_ntotal(:,:,:,3)
+  !Diag(nb)%cosp%CFODD_NDBZE_list                   = CFODD_HISTDBZEcenters
+  !Diag(nb)%cosp%CFODD_NICOD_list                   = CFODD_HISTICODcenters
+
+  enddo
  
   end subroutine cosp2_driver
 
